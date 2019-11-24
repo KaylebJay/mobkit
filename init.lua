@@ -176,7 +176,7 @@ function mobkit.get_node_height(pos)
 	if node == nil then return nil end
 	
 	if node.walkable then
-		if node.drawtype == 'nodebox' then
+		if node.drawtype == 'nodebox' and node.node_box then
 			if node.node_box.type == 'fixed' then
 				if type(node.node_box.fixed[1]) == 'number' then
 					return npos.y + node.node_box.fixed[5] ,0, false
