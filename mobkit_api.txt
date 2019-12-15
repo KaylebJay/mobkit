@@ -5,7 +5,7 @@ Contents
 		1.1.1 Low level functions
 		1.1.2 High level functions
 			1.1.2.1 Priority
-	1.2 Brain function
+	1.2 Logic function
 	1.3 Processing diagram
 	1.4 Entity definition
 	1.5 Exposed luaentity members 
@@ -100,7 +100,7 @@ hq_bhv1(self,prty):
 Particular prioritization scheme is to be designed by the user according to specific mod requirements.
 
 
-1.2 Brain function		
+1.2 Logic function		
 ------------------
 Every mob must have one. 
 Its job is managing high level behavior queue in response to events which are not intercepted by callbacks. 
@@ -141,7 +141,7 @@ end
 |				PHYSICS					|
 |										|
 |		 -----------------------		|
-|		| Brain Function		|		|
+|		| Logic Function		|		|
 |		 -----------------------		|
 |			  |							|
 |		 -----|-----------------		|
@@ -157,7 +157,7 @@ end
  ---------------------------------------
 
  Order of execution during an engine step:
- First comes physics: gravity, buoyancy, friction etc., then the brain function is called.
+ First comes physics: gravity, buoyancy, friction etc., then the logic function is called.
  After that, the first behavior on the high level queue, if exists, 
  and the last, the first low level behavior if present.
  
@@ -192,11 +192,11 @@ minetest.register_entity("mod:name",{
 	on_step = mobkit.stepfunc,	
 	on_activate = mobkit.actfunc,		
 	get_staticdata = mobkit.statfunc,
-	brainfunc = [function user defined],
+	logic = [function user defined],		-- older 'brainfunc' name works as well.
 	
 				-- optional mobkit props
 				-- or used by built in behaviors
-				
+	physics = [function user defined] 		-- optional, overrides built in physics			
 	animation = {
 		[name]={range={x=[num],y=[num]},speed=[num],loop=[bool]},		-- single
 		
@@ -208,9 +208,32 @@ minetest.register_entity("mod:name",{
 		...
 		}
 	sounds = {
-		[name] = [string filename],
+		[name] = [string filename],				--single, simple,
+		
+		[name] = {								--single, more powerful. All fields but 'name' are optional
+			name = [string filename],
+			gain=[num or range],				--range is a table of the format {left_bound, right_bound}
+			fade=[num or range],
+			pitch=[num or range],
+			},
+						
+		[name] = {								--variant, sound is chosen randomly
+			{
+			name = [string filename],
+			gain=[num or range],
+			fade=[num or range],
+			pitch=[num or range],
+			},
+			{
+			name = [string filename],
+			gain=[num or range],
+			fade=[num or range],
+			pitch=[num or range],
+			},
+			...
+		},
 		...
-		}
+	},
 	max_speed = [num],					-- m/s
 	jump_height = [num],				-- nodes/meters
 	view_range = [num],					-- nodes/meters
@@ -223,10 +246,10 @@ minetest.register_entity("mod:name",{
 
 Some frequently used entity fields to be accessed directly for convenience
 
-	self.dtime		- dtime as passed to on_step
-	self.hp			- hitpoints
-	self.isonground	- true if pos.y remains unchanged for 2 consecutive steps
-	self.isinliquid	- true if the node at foot level is drawtype=='liquid'
+	self.dtime		-- max(dtime as passed to on_step,0.5) - limit of 0.05 to prevent jerkines on long steps.
+	self.hp			-- hitpoints
+	self.isonground		-- true if pos.y remains unchanged for 2 consecutive steps
+	self.isinliquid		-- true if the node at foot level is drawtype=='liquid'
 
 ------------
 2. Reference
@@ -234,12 +257,23 @@ Some frequently used entity fields to be accessed directly for convenience
 
 2.1 Utility Functions
 
+function mobkit.minmax(v,m)
+	-- v,n: numbers
+	-- returns v trimmed to <-m,m> range
+
 function mobkit.get_terrain_height(pos,steps)
 	-- recursively search for walkable surface at pos.
 	-- steps (optional) is how far from pos it gives up, expressed in nodes, default 3
 	-- Returns:
 		-- surface height at pos, or nil if not found
 		-- liquid flag: true if found surface is covered with liquid 
+		
+function mobkit.turn2yaw(self,tyaw,rate)
+	-- gradually turns towards yaw
+	-- self: luaentity
+	-- tyaw: target yaw in radians
+	-- rate: turn rate in rads/s
+	--returns: true if facing tyaw; current yaw
 		
 function mobkit.timer(self,s) 
 	-- returns true approx every s seconds
@@ -285,6 +319,9 @@ function mobkit.isnear3d(p1,p2,thresh)
 function mobkit.dir_to_rot(v,rot)
 	-- converts a 3d vector v to rotation like in set_rotation() object method
 	-- rot (optional) is current object rotation
+	
+function mobkit.rot_to_dir(rot)
+	-- converts minetest rotation vector (pitch,yaw,roll) to direction unit vector 
 
 function mobkit.is_alive(thing)		
 	-- non essential, checks if thing exists in the world and is alive
@@ -324,11 +361,18 @@ function mobkit.animate(self,anim)
 	
 function mobkit.make_sound(self,sound)
 	-- sound is string, see entity definition
-	-- makes an entity play sound, or does nothing if not defined 
+	-- makes an entity play sound, or does nothing if not defined
+	--returns sound handle
 	
-function mobkit.go_forward_horizontal(self,yaw,speed)
+function mobkit.go_forward_horizontal(self,speed)
 	-- sets an entity's horizontal velocity in yaw direction. Vertical velocity unaffected.
-
+	
+function mobkit.drive_to_pos(self,tpos,speed,turn_rate,dist) 
+	-- moves in facing direction while gradually turning towards tpos, returns true if in dist distance from tpos
+	-- tpos: target position
+	-- speed: in m/s
+	-- turn_rate: in rad/s
+	-- dist: in m.
 	
 -- Memory functions. 
 
@@ -363,8 +407,10 @@ function mobkit.get_queue_priority(self)
 	-- this is also the highest of all queued behaviors
 
 
--- Use these inside brain functions --
+-- Use these inside logic functions --
 
+function mobkit.vitals(self)
+	-- default drowning and fall damage, call it before hp check
 function mobkit.get_nearby_player(self)	
 	-- returns random player if nearby or nil
 function mobkit.get_nearby_entity(self,name)	
